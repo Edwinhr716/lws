@@ -16226,6 +16226,8 @@ spec:
                 - LeaderCreated
                 - LeaderReady
                 type: string
+              subdomainPolicy:
+                type: string
             required:
             - leaderWorkerTemplate
             type: object
