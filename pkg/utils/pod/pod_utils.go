@@ -117,6 +117,8 @@ func AddLWSVariables(pod *corev1.Pod) error {
 		Value: fmt.Sprintf("%s-%s.%s.%s", lwsName, groupIndex, pod.Spec.Subdomain, pod.ObjectMeta.Namespace),
 	}
 
+	rayClusterSizeEnvVar := 
+
 	for i := range pod.Spec.Containers {
 		addEnvVarIfNotExists(&pod.Spec.Containers[i], leaderAddressEnvVar)
 	}
