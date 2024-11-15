@@ -41,13 +41,9 @@ func NonZeroValue(value int32) int32 {
 }
 
 func LeaderWorkerTemplateHash(lws *leaderworkerset.LeaderWorkerSet) string {
-	if lws.Spec.NetworkConfig == nil || string(*lws.Spec.NetworkConfig.SubdomainPolicy) == string(leaderworkerset.SubdomainShared) {
-		return Sha1Hash(lws.Spec.LeaderWorkerTemplate.LeaderTemplate.String() +
-			lws.Spec.LeaderWorkerTemplate.WorkerTemplate.String())
-	}
 
 	return Sha1Hash(lws.Spec.LeaderWorkerTemplate.LeaderTemplate.String() +
-		lws.Spec.LeaderWorkerTemplate.WorkerTemplate.String() + string(*lws.Spec.NetworkConfig.SubdomainPolicy))
+		lws.Spec.LeaderWorkerTemplate.WorkerTemplate.String())
 }
 
 // SortByIndex returns an ascending list, the length of the list is always specified by the parameter.
