@@ -136,6 +136,12 @@ func (p *PodWebhook) Default(ctx context.Context, obj runtime.Object) error {
 				SetExclusiveAffinities(pod, subGroupUniqueKey, subEpKey, leaderworkerset.SubGroupUniqueHashLabelKey)
 			}
 		}
+		if pod.Annotations[leaderworkerset.ReplicaUniqueNodeSelectorAnnotationKey] != "" {
+			setUniqueNodeSelector(pod, pod.Name)
+		}
+		if pod.Annotations[leaderworkerset.ReplicaUniqueTolerationKeyAnnotationKey] != "" {
+			setUniqueToleration(pod, pod.Name)
+		}
 	} else {
 		_, workerIndex := statefulsetutils.GetParentNameAndOrdinal(pod.Name)
 		if workerIndex == -1 {
@@ -156,6 +162,12 @@ func (p *PodWebhook) Default(ctx context.Context, obj runtime.Object) error {
 			if subEpKey, foundSubEpKey := pod.Annotations[leaderworkerset.SubGroupExclusiveKeyAnnotationKey]; foundSubEpKey {
 				SetExclusiveAffinities(pod, subGroupUniqueKey, subEpKey, leaderworkerset.SubGroupUniqueHashLabelKey)
 			}
+		}
+		if pod.Annotations[leaderworkerset.ReplicaUniqueNodeSelectorAnnotationKey] != "" {
+			setUniqueNodeSelector(pod, pod.Annotations[leaderworkerset.LeaderPodNameAnnotationKey])
+		}
+		if pod.Annotations[leaderworkerset.ReplicaUniqueTolerationKeyAnnotationKey] != "" {
+			setUniqueToleration(pod, pod.Annotations[leaderworkerset.LeaderPodNameAnnotationKey])
 		}
 	}
 
@@ -248,4 +260,32 @@ func getSubGroupIndex(podCount int, subGroupSize int, workerIndex int) string {
 		return fmt.Sprint((workerIndex - 1) / subGroupSize)
 	}
 	return fmt.Sprint(workerIndex / subGroupSize)
+}
+
+func getEffect(effect string) corev1.TaintEffect {
+	switch effect {
+	case "NoSchedule":
+		return corev1.TaintEffectNoSchedule
+	case "PreferNoSchedule":
+		return corev1.TaintEffectPreferNoSchedule
+	case "NoExecute":
+		return corev1.TaintEffectNoExecute
+	}
+	return corev1.TaintEffectNoSchedule
+}
+
+func setUniqueNodeSelector(pod *corev1.Pod, leaderName string) {
+	if pod.Spec.NodeSelector == nil {
+		pod.Spec.NodeSelector = make(map[string]string)
+	}
+	pod.Spec.NodeSelector[pod.Annotations[leaderworkerset.ReplicaUniqueNodeSelectorAnnotationKey]] = leaderName
+}
+
+func setUniqueToleration(pod *corev1.Pod, leaderName string) {
+	pod.Spec.Tolerations = append(pod.Spec.Tolerations, corev1.Toleration{
+		Key:      pod.Annotations[leaderworkerset.ReplicaUniqueTolerationKeyAnnotationKey],
+		Operator: corev1.TolerationOpEqual,
+		Value:    leaderName,
+		Effect:   getEffect(pod.Annotations[leaderworkerset.ReplicaUniqueTolerationEffectAnnotationKey]),
+	})
 }

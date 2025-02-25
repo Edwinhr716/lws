@@ -24,11 +24,13 @@ import (
 // LeaderWorkerSetSpecApplyConfiguration represents a declarative configuration of the LeaderWorkerSetSpec type for use
 // with apply.
 type LeaderWorkerSetSpecApplyConfiguration struct {
-	Replicas             *int32                                  `json:"replicas,omitempty"`
-	LeaderWorkerTemplate *LeaderWorkerTemplateApplyConfiguration `json:"leaderWorkerTemplate,omitempty"`
-	RolloutStrategy      *RolloutStrategyApplyConfiguration      `json:"rolloutStrategy,omitempty"`
-	StartupPolicy        *leaderworkersetv1.StartupPolicyType    `json:"startupPolicy,omitempty"`
-	NetworkConfig        *NetworkConfigApplyConfiguration        `json:"networkConfig,omitempty"`
+	Replicas                  *int32                                     `json:"replicas,omitempty"`
+	LeaderWorkerTemplate      *LeaderWorkerTemplateApplyConfiguration    `json:"leaderWorkerTemplate,omitempty"`
+	RolloutStrategy           *RolloutStrategyApplyConfiguration         `json:"rolloutStrategy,omitempty"`
+	StartupPolicy             *leaderworkersetv1.StartupPolicyType       `json:"startupPolicy,omitempty"`
+	NetworkConfig             *NetworkConfigApplyConfiguration           `json:"networkConfig,omitempty"`
+	ReplicaUniqueNodeSelector *string                                    `json:"replicaUniqueNodeSelector,omitempty"`
+	ReplicaUniqueToleration   *ReplicaUniqueTolerationApplyConfiguration `json:"replicaUniqueToleration,omitempty"`
 }
 
 // LeaderWorkerSetSpecApplyConfiguration constructs a declarative configuration of the LeaderWorkerSetSpec type for use with
@@ -74,5 +76,21 @@ func (b *LeaderWorkerSetSpecApplyConfiguration) WithStartupPolicy(value leaderwo
 // If called multiple times, the NetworkConfig field is set to the value of the last call.
 func (b *LeaderWorkerSetSpecApplyConfiguration) WithNetworkConfig(value *NetworkConfigApplyConfiguration) *LeaderWorkerSetSpecApplyConfiguration {
 	b.NetworkConfig = value
+	return b
+}
+
+// WithReplicaUniqueNodeSelector sets the ReplicaUniqueNodeSelector field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ReplicaUniqueNodeSelector field is set to the value of the last call.
+func (b *LeaderWorkerSetSpecApplyConfiguration) WithReplicaUniqueNodeSelector(value string) *LeaderWorkerSetSpecApplyConfiguration {
+	b.ReplicaUniqueNodeSelector = &value
+	return b
+}
+
+// WithReplicaUniqueToleration sets the ReplicaUniqueToleration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ReplicaUniqueToleration field is set to the value of the last call.
+func (b *LeaderWorkerSetSpecApplyConfiguration) WithReplicaUniqueToleration(value *ReplicaUniqueTolerationApplyConfiguration) *LeaderWorkerSetSpecApplyConfiguration {
+	b.ReplicaUniqueToleration = value
 	return b
 }
