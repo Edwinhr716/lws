@@ -678,7 +678,13 @@ func constructLeaderStatefulSetApplyConfiguration(lws *leaderworkerset.LeaderWor
 	if lws.Spec.NetworkConfig != nil && *lws.Spec.NetworkConfig.SubdomainPolicy == leaderworkerset.SubdomainUniquePerReplica {
 		podAnnotations[leaderworkerset.SubdomainPolicyAnnotationKey] = string(leaderworkerset.SubdomainUniquePerReplica)
 	}
-
+	if lws.Spec.ReplicaUniqueNodeSelector != "" {
+		podAnnotations[leaderworkerset.ReplicaUniqueNodeSelectorAnnotationKey] = lws.Spec.ReplicaUniqueNodeSelector
+	}
+	if lws.Spec.ReplicaUniqueToleration != nil {
+		podAnnotations[leaderworkerset.ReplicaUniqueTolerationKeyAnnotationKey] = lws.Spec.ReplicaUniqueToleration.Key
+		podAnnotations[leaderworkerset.ReplicaUniqueTolerationEffectAnnotationKey] = string(lws.Spec.ReplicaUniqueToleration.Effect)
+	}
 	podTemplateApplyConfiguration.WithAnnotations(podAnnotations)
 
 	// construct statefulset apply configuration

@@ -41,6 +41,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &leaderworkersetv1.LeaderWorkerTemplateApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("NetworkConfig"):
 		return &leaderworkersetv1.NetworkConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("ReplicaUniqueToleration"):
+		return &leaderworkersetv1.ReplicaUniqueTolerationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("RollingUpdateConfiguration"):
 		return &leaderworkersetv1.RollingUpdateConfigurationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("RolloutStrategy"):

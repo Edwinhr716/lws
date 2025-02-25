@@ -16360,6 +16360,22 @@ spec:
                 required:
                 - subdomainPolicy
                 type: object
+              replicaUniqueNodeSelector:
+                type: string
+              replicaUniqueToleration:
+                properties:
+                  effect:
+                    enum:
+                    - NoSchedule
+                    - PreferNoSchedule
+                    - NoExecute
+                    type: string
+                  key:
+                    type: string
+                required:
+                - effect
+                - key
+                type: object
               replicas:
                 default: 1
                 description: |-

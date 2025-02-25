@@ -91,6 +91,12 @@ const (
 	// Leader pods will have an annotation that determines what type of domain
 	// will be injected. Corresponds to LeaderWorkerSet.Spec.NetworkConfig.SubdomainPolicy
 	SubdomainPolicyAnnotationKey string = "leaderworkerset.sigs.k8s.io/subdomainPolicy"
+
+	ReplicaUniqueNodeSelectorAnnotationKey string = "leaderworkerset.sigs.k8s.io/replicaUniqueNodeSelector"
+
+	ReplicaUniqueTolerationKeyAnnotationKey string = "leaderworkerset.sigs.k8s.io/replicaUniqueTolerationKey"
+
+	ReplicaUniqueTolerationEffectAnnotationKey string = "leaderworkerset.sigs.k8s.io/replicaUniqueTolerationEffect"
 )
 
 // One group consists of a single leader and M workers, and the total number of pods in a group is M+1.
@@ -133,6 +139,10 @@ type LeaderWorkerSetSpec struct {
 	// NetworkConfig defines the network configuration of the group
 	// +optional
 	NetworkConfig *NetworkConfig `json:"networkConfig,omitempty"`
+
+	ReplicaUniqueNodeSelector string `json:"replicaUniqueNodeSelector,omitempty"`
+
+	ReplicaUniqueToleration *ReplicaUniqueToleration `json:"replicaUniqueToleration,omitempty"`
 }
 
 // Template of the leader/worker pods, the group will include at least one leader pod.
@@ -229,6 +239,12 @@ type NetworkConfig struct {
 	// the headless service, defaults to shared
 	// +kubebuilder:validation:Enum={Shared,UniquePerReplica}
 	SubdomainPolicy *SubdomainPolicy `json:"subdomainPolicy"`
+}
+
+type ReplicaUniqueToleration struct {
+	Key string `json:"key"`
+	// +kubebuilder:validation:Enum={NoSchedule,PreferNoSchedule,NoExecute}
+	Effect corev1.TaintEffect `json:"effect"`
 }
 
 type SubdomainPolicy string

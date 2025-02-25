@@ -333,6 +333,13 @@ func constructWorkerStatefulSetApplyConfiguration(leaderPod corev1.Pod, lws lead
 			podAnnotations[leaderworkerset.SubGroupExclusiveKeyAnnotationKey] = lws.Annotations[leaderworkerset.SubGroupExclusiveKeyAnnotationKey]
 		}
 	}
+	if lws.Spec.ReplicaUniqueNodeSelector != "" {
+		podAnnotations["replicaUniqueNodeSelector"] = lws.Spec.ReplicaUniqueNodeSelector
+	}
+	if lws.Spec.ReplicaUniqueToleration != nil {
+		podAnnotations["replicaUniqueTolerationKey"] = lws.Spec.ReplicaUniqueToleration.Key
+		podAnnotations["replicaUniqueTolerationEffect"] = string(lws.Spec.ReplicaUniqueToleration.Effect)
+	}
 	acceleratorutils.AddTPUAnnotations(leaderPod, podAnnotations)
 	podTemplateApplyConfiguration.WithAnnotations(podAnnotations)
 	serviceName := leaderPod.Name
