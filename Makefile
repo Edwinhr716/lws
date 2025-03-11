@@ -303,10 +303,22 @@ generate-apiref: genref
 
 HELM = $(PROJECT_DIR)/bin/helm
 .PHONY: helm
-helm: ## Download helm locally if necessary.
-	GOBIN=$(PROJECT_DIR)/bin GO111MODULE=on $(GO_CMD) install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION)
+helm: manifests kustomize helmify ## Download helm locally if necessary.
+	GOBIN=$(PROJECT_DIR)/bin GO111MODULE=on $(GO_CMD) install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION) 
+	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/lws -crd-dir
 
 YQ = $(PROJECT_DIR)/bin/yq
 .PHONY: yq
 yq: ## Download yq locally if necessary.
 	GOBIN=$(PROJECT_DIR)/bin GO111MODULE=on $(GO_CMD) install github.com/mikefarah/yq/v4@v4.45.1
+
+HELMIFY ?= $(PROJECT_DIR)/bin/helmify
+.PHONY: helmify
+helmify: 
+	test -s $(PROJECT_DIR)/bin/helmify || GOBIN=$(PROJECT_DIR)/bin GO111MODULE=on $(GO_CMD) install github.com/arttor/helmify/cmd/helmify@v0.4.17
+
+.PHONY: helm-install
+helm-install: helm
+	helm upgrade --install lws ./charts/lws -f ./charts/lws/values.yaml --create-namespace --namespace lws-system
+
+
