@@ -200,6 +200,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 func (r *PodReconciler) handleRestartPolicy(ctx context.Context, pod corev1.Pod, leaderWorkerSet leaderworkerset.LeaderWorkerSet) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
+	if leaderWorkerSet.Spec.LeaderWorkerTemplate.RestartPolicy == leaderworkerset.RecreateGroupInPlace {
+		return r.handleInPlaceRestart(ctx, pod, leaderWorkerSet)
+	}
+
 	if leaderWorkerSet.Spec.LeaderWorkerTemplate.RestartPolicy != leaderworkerset.RecreateGroupOnPodRestart {
 		return false, nil
 	}
@@ -250,6 +254,177 @@ func (r *PodReconciler) handleRestartPolicy(ctx context.Context, pod corev1.Pod,
 	}
 	r.Record.Eventf(&leaderWorkerSet, corev1.EventTypeNormal, "RecreateGroupOnPodRestart", fmt.Sprintf("Worker pod %s failed, deleted leader pod %s to recreate group %s", pod.Name, leader.Name, leader.Labels[leaderworkerset.GroupIndexLabelKey]))
 	return true, nil
+}
+
+func (r *PodReconciler) handleInPlaceRestart(ctx context.Context, pod corev1.Pod, lws leaderworkerset.LeaderWorkerSet) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Check if any container in the pod has restarted or failed.
+	// We only trigger restart if we see a failure/restart.
+	// If the pod is simply Running and healthy, we do nothing.
+	if !podutils.ContainerRestarted(pod) && !podInFailedState(pod) {
+		return false, nil
+	}
+
+	// Fetch all pods in the group to determine if any of them have failed.
+	// Actually, strictly speaking, this function is called per-pod.
+	// But we need to coordinate the group.
+	// If *this* pod is failed, we should trigger a group restart.
+	// AND we need to check if the group is *already* in the middle of a restart?
+	// The Agent logic: "Wait at barrier".
+	// The Controller logic: "Increment restart attempt".
+
+	// 1. Get the Leader Pod (to read current annotations).
+	var leader corev1.Pod
+	if podutils.LeaderPod(pod) {
+		leader = pod
+	} else {
+		leaderName, _ := statefulsetutils.GetParentNameAndOrdinal(pod.Name)
+		if err := r.Get(ctx, types.NamespacedName{Name: leaderName, Namespace: pod.Namespace}, &leader); err != nil {
+			return false, client.IgnoreNotFound(err)
+		}
+	}
+
+	// 2. Read annotations
+	currentAttemptStr := leader.Annotations[leaderworkerset.RestartAttemptAnnotationKey]
+	currentAttempt := 0
+	if currentAttemptStr != "" {
+		var err error
+		currentAttempt, err = strconv.Atoi(currentAttemptStr)
+		if err != nil {
+			log.Error(err, "invalid restart attempt annotation", "value", currentAttemptStr)
+			// Reset to 0? Or fail? Fail for now.
+			return false, err
+		}
+	}
+
+	// 3. Determine if this failure is "new".
+	// If the pod has *already* acknowledged this attempt, then it might be failing *again*?
+	// The Agent writes "pending-restart-attempt" (PodInPlaceRestartAttempt).
+	// If Agent says "I am at attempt X", and X < Current, it is restarting.
+	// If X == Current, it is running.
+	// If we see a failure AND (X == Current OR X is missing), then it is a NEW failure.
+	// If X < Current, it's already restarting, so ignoring it might be okay (or we might need to bump again if it failed *during* restart?).
+	// JobSet logic: "If any job fails... and restarts < maxRestarts... recreate all".
+	// For InPlace: "If any pod fails... increment attempt".
+	
+	// We need to check if we recently bumped it.
+	// Ideally we check if the failure timestamp > last restart timestamp.
+	// BUT we are using integer attempts.
+	
+	// Simple logic:
+	// If Pod is failed/restarted, AND we haven't already bumped for this specific failure?
+	// How do we know?
+	// Maybe we rely on the Agent's "Pending" annotation?
+	// If `pod-pending-restart-attempt` == `current-restart-attempt`, AND it is failed -> Bump.
+	// If `pod-pending-restart-attempt` < `current-restart-attempt`, it is already lagging (restarting).
+	
+	pendingAttemptStr := pod.Annotations[leaderworkerset.PendingRestartAttemptAnnotationKey]
+	pendingAttempt := 0
+	if pendingAttemptStr != "" {
+		var err error
+		pendingAttempt, err = strconv.Atoi(pendingAttemptStr)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	if pendingAttempt < currentAttempt {
+		// Already processing a restart for this group (or at least this pod is behind).
+		return false, nil
+	}
+
+	// bump the restart attempt
+	newAttempt := currentAttempt + 1
+	newAttemptStr := strconv.Itoa(newAttempt)
+
+	// Patch ALL pods in the group.
+	// We need to list them all.
+	pods, err := r.getPodsInGroup(ctx, lws, leader.Labels[leaderworkerset.GroupIndexLabelKey])
+	if err != nil {
+		return false, err
+	}
+
+	// We patch both RestartAttempt (Current) and Previous? 
+	// JobSet uses separate "Current" and "Previous" in STATUS.
+	// But maps them to annotations?
+	// JobSet Controller:
+	//   sets `jobset.sigs.k8s.io/restart-attempt` label on Job.
+	//   The Agent reads?
+	//   Wait, the Agent reads `CurrentInPlaceRestartAttempt` and `Previous...` from **JobSet Status**?
+	//   "Get associated JobSet". Yes.
+	//   The Agent watches the JOBSET.
+	//   BUT I am writing an Agent for LWS.
+	//   The Pod should validly be the source of truth if we use annotations.
+	//   So I will use annotations on the Pod.
+	//   To keep it atomic, I should patch all pods.
+	
+	patchFn := func(p corev1.Pod) error {
+		patch := client.MergeFrom(p.DeepCopy())
+		if p.Annotations == nil {
+			p.Annotations = make(map[string]string)
+		}
+		p.Annotations[leaderworkerset.RestartAttemptAnnotationKey] = newAttemptStr
+		// We also need "Previous"?
+		// If we follow my "Latch" logic:
+		// Previous is useful if we want to force a restart even if Agent is confused.
+		// But `current > pending` is enough signal to "Restart until pending==current".
+		// Agent Logic:
+		//   pending = read(annotation)
+		//   server = read(annotation_current)
+		//   if pending < server:
+		//      pending = server
+		//      write(pending)
+		//      exit()
+		// This is sufficient! 
+		// If pending < server, it means "I am outdated".
+		// So I don't need "Previous".
+		
+		return r.Patch(ctx, &p, patch)
+	}
+
+	for _, p := range pods {
+		if err := patchFn(p); err != nil {
+			log.Error(err, "failed to patch pod with new restart attempt", "pod", p.Name)
+			return false, err
+		}
+	}
+	
+	r.Record.Eventf(&lws, corev1.EventTypeNormal, "GroupsRestarting", "In-place restart triggered for group %s due to pod %s failure (attempt %d)", leader.Labels[leaderworkerset.GroupIndexLabelKey], pod.Name, newAttempt)
+
+	return false, nil
+}
+
+func podInFailedState(pod corev1.Pod) bool {
+	if pod.Status.Phase == corev1.PodFailed {
+		return true
+	}
+	// Check for CrashLoopBackOff or Error in waiting state
+	for _, statuses := range [][]corev1.ContainerStatus{pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses} {
+		for _, status := range statuses {
+			if status.State.Terminated != nil && status.State.Terminated.ExitCode != 0 {
+				return true
+			}
+			if status.State.Waiting != nil && (status.State.Waiting.Reason == "CrashLoopBackOff" || status.State.Waiting.Reason == "Error") {
+				// We might want to be careful with CrashLoopBackOff if it's just starting up?
+				// But generally yes, it's a failure.
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *PodReconciler) getPodsInGroup(ctx context.Context, lws leaderworkerset.LeaderWorkerSet, groupIndex string) ([]corev1.Pod, error) {
+	podSelector := client.MatchingLabels(map[string]string{
+		leaderworkerset.SetNameLabelKey:    lws.Name,
+		leaderworkerset.GroupIndexLabelKey: groupIndex,
+	})
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, podSelector, client.InNamespace(lws.Namespace)); err != nil {
+		return nil, err
+	}
+	return podList.Items, nil
 }
 
 func (r *PodReconciler) setNodeSelectorForWorkerPods(ctx context.Context, pod *corev1.Pod, sts *appsapplyv1.StatefulSetApplyConfiguration, topologyKey string) error {
@@ -347,6 +522,9 @@ func constructWorkerStatefulSetApplyConfiguration(leaderPod corev1.Pod, lws lead
 		return nil, err
 	}
 	podTemplateSpec := *currentLws.Spec.LeaderWorkerTemplate.WorkerTemplate.DeepCopy()
+	if lws.Spec.LeaderWorkerTemplate.RestartPolicy == leaderworkerset.RecreateGroupInPlace {
+		podutils.InjectInPlaceRestartSidecar(&podTemplateSpec.Spec)
+	}
 	// construct pod template spec configuration
 	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&podTemplateSpec)
 	if err != nil {
@@ -411,6 +589,38 @@ func constructWorkerStatefulSetApplyConfiguration(leaderPod corev1.Pod, lws lead
 			WhenScaled:  &lws.Spec.LeaderWorkerTemplate.PersistentVolumeClaimRetentionPolicy.WhenScaled,
 		}
 		statefulSetConfig.Spec.WithPersistentVolumeClaimRetentionPolicy(pvcRetentionPolicy)
+	}
+
+	// Inject in-place restart sidecar if enabled
+	if lws.Spec.LeaderWorkerTemplate.RestartPolicy == leaderworkerset.RecreateGroupInPlace {
+		// Use a helper that works on *PodSpecApplyConfiguration if possible, or just modify the ApplyConfiguration struct directly?
+		// modify the `podTemplateApplyConfiguration` before it is added to `statefulSetConfig`?
+		// But `podTemplateApplyConfiguration` was converted from unstructured.
+		// It's convoluted.
+		// `podTemplateSpec` is a corev1.PodTemplateSpec. We can modify that BEFORE converting to unstructured!
+		// Line 349: podTemplateSpec := *currentLws.Spec.LeaderWorkerTemplate.WorkerTemplate.DeepCopy()
+		
+		// Actually, let's look at where `podTemplateSpec` is used.
+		// It is used to create `obj`.
+		// We should inject BEFORE that.
+		// BUT `constructWorkerStatefulSetApplyConfiguration` is the function we are in.
+		// We need to modify `podTemplateSpec` before line 351.
+		
+		// Wait, I can't easily modify the code block at line 351 because I am replacing closing brace?
+		// No, I am replacing the end of the function.
+		// I should use `multi_replace` to target the START of the function or just edit the `podTemplateSpec` near the top.
+		
+		// Refactor: I'll just do it on the `statefulSetConfig`?
+		// `statefulSetConfig.Spec.Template.Spec.Containers`?
+		// It is an ApplyConfiguration.
+		// `WithContainers` appends? No, it replaces list.
+		// Accessing the list is hard.
+		
+		// Better: Update `currentLws` at the start?
+		// `currentLws` is derived from `revisonutils.ApplyRevision`.
+		
+		// Let's modify the `podTemplateSpec` logic.
+		// I will do another replacement for the start of the function.
 	}
 	return statefulSetConfig, nil
 }

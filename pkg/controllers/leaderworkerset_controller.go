@@ -722,6 +722,9 @@ func constructLeaderStatefulSetApplyConfiguration(lws *leaderworkerset.LeaderWor
 	} else {
 		podTemplateSpec = *lws.Spec.LeaderWorkerTemplate.WorkerTemplate.DeepCopy()
 	}
+	if lws.Spec.LeaderWorkerTemplate.RestartPolicy == leaderworkerset.RecreateGroupInPlace {
+		podutils.InjectInPlaceRestartSidecar(&podTemplateSpec.Spec)
+	}
 	// construct pod template spec configuration
 	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&podTemplateSpec)
 	if err != nil {

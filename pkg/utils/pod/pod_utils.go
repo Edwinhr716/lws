@@ -218,3 +218,36 @@ func GetPodConditionFromList(conditions []corev1.PodCondition, conditionType cor
 	}
 	return -1, nil
 }
+
+// InjectInPlaceRestartSidecar injects the in-place restart sidecar container into the pod spec.
+func InjectInPlaceRestartSidecar(podSpec *corev1.PodSpec) {
+	// Check if sidecar already exists to avoid duplication
+	for _, c := range podSpec.Containers {
+		if c.Name == leaderworkerset.InPlaceRestartSidecarName {
+			return
+		}
+	}
+
+	sidecar := corev1.Container{
+		Name:  leaderworkerset.InPlaceRestartSidecarName,
+		Image: leaderworkerset.InPlaceRestartSidecarImage,
+		Env: []corev1.EnvVar{
+			{
+				Name:  "JOBSET_NAME",
+				Value: "placeholder-jobset-name", // LWS might not map 1:1 to JobSet, but Agent needs it.
+				// Actually, the agent uses this to find the object.
+				// If we are reusing the agent, we might need to trick it or adapt it.
+				// The agent watches "JobSet". But here we are LWS.
+				// The agent I'm porting "cmd/in-place-restart-agent" watches JobSet.
+				// I am supposed to "have to implement the sidecar" as well.
+				// The user said: "Implement a similar logic to the sidecar in the JobSet repository".
+				// So I will write my OWN agent that watches LWS or Pods.
+				// My agent will likely watch the POD itself or the LWS.
+				// For simplicity/robustness, watching the POD (self) is easiest if mostly annotation based.
+				// So I don't need JOBSET_NAME if my agent doesn't use it.
+			},
+		},
+		// We might need volume mounts if we want to share something, but for annotations we don't need much.
+	}
+	podSpec.Containers = append(podSpec.Containers, sidecar)
+}

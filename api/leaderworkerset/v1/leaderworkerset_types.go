@@ -96,6 +96,19 @@ const (
 	// Enables feature where the group will be restarted after pod failure if and only if
 	// all pods in the group are not pending
 	RecreateGroupAfterStart string = "leaderworkerset.sigs.k8s.io/experimental-recreate-group-after-start"
+
+	// RestartAttempt used to track the current restart attempt for the group.
+	RestartAttemptAnnotationKey string = "leaderworkerset.sigs.k8s.io/restart-attempt"
+
+	// PendingRestartAttempt used by the in-place restart agent to track its local state.
+	PendingRestartAttemptAnnotationKey string = "leaderworkerset.sigs.k8s.io/pending-restart-attempt"
+
+	// InPlaceRestartSidecarName is the name of the sidecar container injected for in-place restarts.
+	InPlaceRestartSidecarName string = "lws-in-place-restart-sidecar"
+
+	// InPlaceRestartSidecarImage is the default image for the in-place restart agent.
+	// TODO: Make this configurable via flags or config if needed.
+	InPlaceRestartSidecarImage string = "registry.k8s.io/jobset/in-place-restart-agent:v0.1.0"
 )
 
 // One group consists of a single leader and M workers, and the total number of pods in a group is M+1.
@@ -166,7 +179,7 @@ type LeaderWorkerTemplate struct {
 	// The former named Default policy is deprecated, will be removed in the future,
 	// replace with None policy for the same behavior.
 	// +kubebuilder:default=RecreateGroupOnPodRestart
-	// +kubebuilder:validation:Enum={Default,RecreateGroupOnPodRestart,None}
+	// +kubebuilder:validation:Enum={Default,RecreateGroupOnPodRestart,RecreateGroupInPlace,None}
 	// +optional
 	RestartPolicy RestartPolicyType `json:"restartPolicy,omitempty"`
 
@@ -334,6 +347,10 @@ const (
 	//
 	// Note: deprecated, use NoneRestartPolicy instead.
 	DeprecatedDefaultRestartPolicy RestartPolicyType = "Default"
+
+	// RecreateGroupInPlace will trigger an in-place restart of the group by updating annotations
+	// when a failure is detected, without physically deleting the Pods.
+	RecreateGroupInPlace RestartPolicyType = "RecreateGroupInPlace"
 
 	// None will follow the same behavior as the StatefulSet where only the failed pod
 	// will be restarted on failure and other pods in the group will not be impacted.
