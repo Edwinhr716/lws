@@ -209,6 +209,10 @@ verify: gomod-verify lint fmt-verify toc-verify manifests generate prepare-relea
 build: manifests fmt vet ## Build manager binary.
 	$(GO_BUILD_ENV) $(GO_CMD) build -ldflags="$(LD_FLAGS)" -o bin/manager cmd/main.go
 
+.PHONY: build-sidecar
+build-sidecar: fmt vet ## Build sidecar binary.
+	$(GO_BUILD_ENV) $(GO_CMD) build -ldflags="$(LD_FLAGS)" -o bin/sidecar cmd/controller/main.go
+
 .PHONY: run
 run: manifests fmt vet ## Run a controller from your host.
 	$(GO_CMD) run ./cmd/main.go

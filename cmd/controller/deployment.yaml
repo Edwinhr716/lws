@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lws-sidecar-controller
+  namespace: default
+  labels:
+    app: lws-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lws-sidecar
+  template:
+    metadata:
+      labels:
+        app: lws-sidecar
+    spec:
+      serviceAccountName: lws-sidecar-sa
+      containers:
+      - name: sidecar
+        image: europe-west4-docker.pkg.dev/gke-shared-ai-dev/controller-sidecar/controller:vibe-code-sidecar
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
